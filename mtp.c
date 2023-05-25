@@ -8,8 +8,12 @@
 #include <string.h>
 
 #define SIZE_BUFFER 50
-#define SIZE_LINE   1000
 
+/*
+ * Struct for get_buff functions.
+ * Those functions need to return
+ * both the data and length
+ */
 struct string{
   char* line;
   ssize_t len;
@@ -56,17 +60,15 @@ static ssize_t STOP_LEN = 5;
 /* 
  * Function to getline and handle errors
  * returns 0 if successful and -1 for feof or STOP\n
- * */
+ */
 ssize_t
 get_user_input(char** input) {
   size_t n = 0;
-  //fprintf(stderr, "Getting user input\n");
   ssize_t len = getline(input, &n, stdin);
   if (len == -1) {
     if (feof(stdin)) return -1;
     else err(1, "stdin");
   }
-  //printf("Line has a length of %ld\n", len);
   if (strcmp(*input, STOP_FLAG) == 0) return -1;
   return len;
 }
@@ -76,11 +78,8 @@ get_user_input(char** input) {
  */
 void
 put_buff_1(char* line, ssize_t len) {
-  //fprintf(stderr, "Putting line into buffer_1\n");
-  //printf("Putting line into buffer_1 of length %ld\n", len);
   pthread_mutex_lock(&mutex_1);
   buffer_1[producer_index_1] = line;
-  //printf("%s\n", buffer_1[producer_index_1]);
   line_len_1[producer_index_1] = len;
   count_1++;
   pthread_cond_signal(&full_1);
@@ -94,29 +93,25 @@ put_buff_1(char* line, ssize_t len) {
  */
 void*
 get_input(void* args) {
-  //fprintf(stderr, "Starting get_input thread\n");
   char* line = NULL;
   ssize_t len = 0;
   while (len != -1) {
-    //printf("Entered get_input while\n");
+    // essentially getline, but with STOP_FLAG
     len = get_user_input(&line);
     put_buff_1(line, len);
   }
   // if get_user_input is -1, put stop flag
   put_buff_1(STOP_FLAG, STOP_LEN);
-  //free(line);
-  //printf("Exiting get_input\n");
   return NULL;
 }
 
 /*
  * Get line from buffer 1
- * TODO Fix len. Maybe created a struct so get buffer can return both string and length
  */
 struct string*
 get_buff_1() {
-  //fprintf(stderr, "Get line from buffer_1\n");
   pthread_mutex_lock(&mutex_1);
+  // Wait for buffer to fill
   while (count_1 == 0) {
     pthread_cond_wait(&full_1, &mutex_1);
   }
@@ -128,7 +123,6 @@ get_buff_1() {
   struct string* output = calloc(1, sizeof(struct string));
   output->line = strdup(line);
   output->len = len;
-
   return output;
 }
 
@@ -137,7 +131,6 @@ get_buff_1() {
  */
 void
 put_buff_2(char* line, ssize_t len) {
-  //fprintf(stderr, "Put line into buffer_2\n");
   pthread_mutex_lock(&mutex_2);
   buffer_2[producer_index_2] = line;
   line_len_2[producer_index_2] = len;
@@ -145,7 +138,6 @@ put_buff_2(char* line, ssize_t len) {
   pthread_cond_signal(&full_2);
   pthread_mutex_unlock(&mutex_2);
   producer_index_2++;
-  //printf("count_2 is %d\n", count_2);
 }
 
 /*
@@ -155,31 +147,26 @@ put_buff_2(char* line, ssize_t len) {
  */
 void*
 remove_line_sep(void* args) {
-  //fprintf(stderr, "Removing line separators from line\n");
   char* line = "";
   ssize_t len;
   while (strcmp(line, STOP_FLAG) != 0) {
-    //printf("Entered remove_line_sep while\n");
     struct string* string = get_buff_1();
     line = strdup(string->line);
     len = string->len;
+    /* 
+     * Need to break early once Stop Flag is
+     * met since the next lines remove the
+     * line separator
+     */
     if (strcmp(line, STOP_FLAG) == 0) {
-      //printf("Saw STOP_FLAG\n");
-      //free(line);
       put_buff_2(STOP_FLAG, STOP_LEN);
       return NULL;
     }
-    //printf("Line %s has a length of %ld in remove_line_sep\n", line, len);
     if (line[len - 1] == '\n') {
       line[len - 1] = ' ';
     }
-    //printf("remove_line_sep '%s' has a length of %ld\n", line, len);
     put_buff_2(line, len);
   }
-  // Once this hits a STOP_FLAG, add STOP_FLAG to buffer 2
-  //put_buff_2(STOP_FLAG, STOP_LEN);
-  //free(line);
-  //printf("Exiting remove_line_sep\n");
   return NULL;
 }
 
@@ -189,14 +176,12 @@ remove_line_sep(void* args) {
 struct string*
 get_buff_2() {
   pthread_mutex_lock(&mutex_2);
+  // when buffer is empty, it needs to wait
   while (count_2 == 0) {
-    //printf("Entered get_buff_2 while\n");
     pthread_cond_wait(&full_2, &mutex_2);
   }
   char* line = buffer_2[consumer_index_2];
   ssize_t len = line_len_2[consumer_index_2];
-  //printf("Here is the line get_buff_2 got: ");
-  //fwrite(line, 1, len, stdout);
   count_2--;
   pthread_mutex_unlock(&mutex_2);
   consumer_index_2++;
@@ -230,24 +215,15 @@ put_buff_3(char* line, ssize_t len) {
  */
 void*
 remove_plus_signs(void* args) {
-  //fprintf(stderr, "Started remove_plus_signs thread\n");
   char* line = "";
   ssize_t len = 0;
   while (strcmp(line, STOP_FLAG) != 0) {
-    //printf("Entered remove_plus_signs while\n");
     struct string* string = get_buff_2();
     line = string->line;
     len = string->len;
-    //if (strcmp(line, STOP_FLAG) == 0) {
-
-      //put_buff_3(STOP_FLAG, STOP_LEN);
-    //}
-    //printf("Got line from buff_2\n");
     char* new_line = malloc(len * sizeof(char));
     ssize_t new_line_len = 0;
-    //printf("Before removing '++' line has a length of %ld\n", len);
     for (ssize_t i = 0; i < len; ++i) {
-      //printf("'%s' loop #%ld\n", new_line, new_line_len);
       if (line[i] == '+' && line[i + 1] == '+') {
         new_line[new_line_len++] = '^';
         i++;
@@ -257,13 +233,9 @@ remove_plus_signs(void* args) {
       }
     }
     new_line = realloc(new_line, new_line_len);
-    //printf("remove_plus_signs '%s' has a length of %ld\n", new_line, new_line_len);
     put_buff_3(new_line, new_line_len);
-    //printf("Put a line into buff_3\n");
   }
-  //put_buff_3(STOP_FLAG, STOP_LEN);
-  //free(line);
-  //printf("Exiting remove_plus_signs\n");
+  // The last line given is the Stop Flag
   return NULL;
 }
 
@@ -272,18 +244,17 @@ remove_plus_signs(void* args) {
  */
 struct string*
 get_buff_3() {
-  //fprintf(stderr, "Entered get_buff_3\n");
   pthread_mutex_lock(&mutex_3);
+  // When buffer is empty, wait
   while (count_3 == 0) {
     pthread_cond_wait(&full_3, &mutex_3);
   }
   char* line = buffer_3[consumer_index_3];
   ssize_t len = line_len_3[consumer_index_3];
-  //printf("Line from buffer_3[%d] is '%s' and length of %ld\n", consumer_index_3, line, len);
   count_3--;
   pthread_mutex_unlock(&mutex_3);
-  //printf("count_3 is %d\n", count_3);
   consumer_index_3++;
+  // Create string struct to return both string data and length
   struct string* output = calloc(1, sizeof(struct string));
   output->line = line;
   output->len = len;
@@ -299,35 +270,40 @@ get_buff_3() {
  */
 void*
 write_line(void* args) {
-  //fprintf(stderr, "Starting Print Line Thread\n");
-  char* line = "";
-  ssize_t len = 0;
-  char output[80];
+  struct string* string = get_buff_3();
+  char* line = string->line;
+  ssize_t len = string->len;
+  char output[81];
+  // every 80 char needs \n to end it
+  output[80] = '\n';
   int out_index = 0;
   while (strcmp(line, STOP_FLAG) != 0) {
-    //fprintf(stderr, "Entered write_line while\n");
-    struct string* string = get_buff_3();
-    line = string->line;
-    len = string->len;
-    if (strcmp(line, STOP_FLAG) == 0) {
-      //free(line);
-      return NULL;
-    }
-    //printf("write_line '%s' has a length of %ld\n", line, len);
-    for (int i = 0; i < len && out_index < 80; ++i) {
+    // Keeps track of how much of line has been read
+    int i = 0;
+    
+    add_more:;
+
+    // Need to reuse i if we jump back to add_more:
+    while (i < len && out_index < 80) {
       output[out_index] = line[i];
       out_index++;
+      i++;
     }
-    //printf("out_index = %d\n", out_index);
+    // Only print 80 characters from the buffer and add \n
     if (out_index == 80) {
-      //printf("Printing something from output!\n");
-      fwrite(&output, 1, 80, stdout);
-      putchar('\n');
+      fflush(stdout);
+      write(1, output, 81);
       out_index = 0;
+      /* 
+       * since the line from the buffer has not been used
+       * up yet, go back and fill output more
+       */
+      if (i < len) goto add_more;
     }
+    string = get_buff_3();
+    line = string->line;
+    len = string->len;
   }
-  //free(line);
-  //printf("Exiting write_line\n");
   return NULL;
 }
 
