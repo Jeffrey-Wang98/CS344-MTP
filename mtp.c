@@ -10,6 +10,11 @@
 #define SIZE_BUFFER 50
 #define SIZE_LINE   1000
 
+struct string{
+  char* line;
+  ssize_t len;
+};
+
 /* Buffers for producer-consumer pairs */
 // Buffer for Input Thread - Line Separator Thread
 char* buffer_1[SIZE_BUFFER];
@@ -107,19 +112,23 @@ get_input(void* args) {
  * Get line from buffer 1
  * TODO Fix len. Maybe created a struct so get buffer can return both string and length
  */
-char*
-get_buff_1(ssize_t* len) {
+struct string*
+get_buff_1() {
   //fprintf(stderr, "Get line from buffer_1\n");
   pthread_mutex_lock(&mutex_1);
   while (count_1 == 0) {
     pthread_cond_wait(&full_1, &mutex_1);
   }
   char* line = buffer_1[consumer_index_1];
-  len = &line_len_1[consumer_index_1];
+  ssize_t len = line_len_1[consumer_index_1];
   count_1--;
   pthread_mutex_unlock(&mutex_1);
   consumer_index_1++;
-  return line;
+  struct string* output = calloc(1, sizeof(struct string));
+  output->line = strdup(line);
+  output->len = len;
+
+  return output;
 }
 
 /*
@@ -147,15 +156,17 @@ void*
 remove_line_sep(void* args) {
   //fprintf(stderr, "Removing line separators from line\n");
   char* line = "";
-  ssize_t* len;
+  ssize_t len;
   while (strcmp(line, STOP_FLAG) != 0) {
     //printf("Entered remove_line_sep while\n");
-    line = get_buff_1(len);
-    printf("Line %s has a length of %ld in remove_line_sep\n", line, *len);
-    if (line[*len - 1] == '\n') {
-      line[*len - 1] = ' ';
+    struct string* string = get_buff_1();
+    line = strdup(string->line);
+    len = string->len;
+    printf("Line %s has a length of %ld in remove_line_sep\n", line, len);
+    if (line[len - 1] == '\n') {
+      line[len - 1] = ' ';
     }
-    put_buff_2(line, *len);
+    put_buff_2(line, len);
   }
   // Once this hits a STOP_FLAG, add STOP_FLAG to buffer 2
   put_buff_2(STOP_FLAG, STOP_LEN);
@@ -166,21 +177,24 @@ remove_line_sep(void* args) {
 /*
  * Get line from buffer 2
  */
-char*
-get_buff_2(ssize_t* len) {
+struct string*
+get_buff_2() {
   pthread_mutex_lock(&mutex_2);
   while (count_2 == 0) {
     //printf("Entered get_buff_2 while\n");
     pthread_cond_wait(&full_2, &mutex_2);
   }
   char* line = buffer_2[consumer_index_2];
-  len = &line_len_2[consumer_index_2];
+  ssize_t len = line_len_2[consumer_index_2];
   //printf("Here is the line get_buff_2 got: ");
-  fwrite(line, 1, *len, stdout);
+  fwrite(line, 1, len, stdout);
   count_2--;
   pthread_mutex_unlock(&mutex_2);
   consumer_index_2++;
-  return line;
+  struct string* output = calloc(1, sizeof(struct string));
+  output->line = line;
+  output->len = len;
+  return output;
 }
 
 /*
@@ -212,7 +226,9 @@ remove_plus_signs(void* args) {
   ssize_t len = 0;
   while (strcmp(line, STOP_FLAG) != 0) {
     //printf("Entered remove_plus_signs while\n");
-    line = get_buff_2(&len);
+    struct string* string = get_buff_2();
+    line = string->line;
+    len = string->len;
     //printf("Got line from buff_2\n");
     char new_line[len];
     ssize_t new_line_len = 0;
@@ -237,20 +253,23 @@ remove_plus_signs(void* args) {
 /*
  * Get line from buffer 3
  */
-char*
-get_buff_3(ssize_t* len) {
+struct string*
+get_buff_3() {
   //fprintf(stderr, "Entered get_buff_3\n");
   pthread_mutex_lock(&mutex_3);
   while (count_3 == 0) {
     pthread_cond_wait(&full_3, &mutex_3);
   }
   char* line = buffer_3[consumer_index_3];
-  len = &line_len_3[consumer_index_3];
+  ssize_t len = line_len_3[consumer_index_3];
   count_3--;
   pthread_mutex_unlock(&mutex_3);
   printf("count_3 is %d\n", count_3);
   consumer_index_3++;
-  return line;
+  struct string* output = calloc(1, sizeof(struct string));
+  output->line = line;
+  output->len = len;
+  return output;
 }
 
 /*
@@ -266,10 +285,12 @@ write_line(void* args) {
   char* line = "";
   ssize_t len = 0;
   char output[80];
-  ssize_t out_index = 0;
+  int out_index = 0;
   while (strcmp(line, STOP_FLAG) != 0) {
     //fprintf(stderr, "Entered write_line while\n");
-    line = get_buff_3(&len);
+    struct string* string = get_buff_3();
+    line = string->line;
+    len = string->len;
     printf("New line has a length of %ld\n", len);
     for (int i = 0; i < len || out_index < 80; ++i) {
       output[out_index] = line[i];
