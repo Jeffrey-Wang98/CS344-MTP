@@ -50,8 +50,8 @@ pthread_mutex_t mutex_3 = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t full_3 = PTHREAD_COND_INITIALIZER;
 
 /* Stop Flag and Length of Flag */
-char* STOP_FLAG = "STOP\n";
-ssize_t STOP_LEN = 5;
+static char* STOP_FLAG = "STOP\n";
+static ssize_t STOP_LEN = 5;
 
 /* 
  * Function to getline and handle errors
@@ -66,7 +66,7 @@ get_user_input(char** input) {
     if (feof(stdin)) return -1;
     else err(1, "stdin");
   }
-  printf("Line has a length of %ld\n", len);
+  //printf("Line has a length of %ld\n", len);
   if (strcmp(*input, STOP_FLAG) == 0) return -1;
   return len;
 }
@@ -104,7 +104,8 @@ get_input(void* args) {
   }
   // if get_user_input is -1, put stop flag
   put_buff_1(STOP_FLAG, STOP_LEN);
-  free(line);
+  //free(line);
+  //printf("Exiting get_input\n");
   return NULL;
 }
 
@@ -162,15 +163,23 @@ remove_line_sep(void* args) {
     struct string* string = get_buff_1();
     line = strdup(string->line);
     len = string->len;
-    printf("Line %s has a length of %ld in remove_line_sep\n", line, len);
+    if (strcmp(line, STOP_FLAG) == 0) {
+      //printf("Saw STOP_FLAG\n");
+      //free(line);
+      put_buff_2(STOP_FLAG, STOP_LEN);
+      return NULL;
+    }
+    //printf("Line %s has a length of %ld in remove_line_sep\n", line, len);
     if (line[len - 1] == '\n') {
       line[len - 1] = ' ';
     }
+    //printf("remove_line_sep '%s' has a length of %ld\n", line, len);
     put_buff_2(line, len);
   }
   // Once this hits a STOP_FLAG, add STOP_FLAG to buffer 2
-  put_buff_2(STOP_FLAG, STOP_LEN);
-  free(line);
+  //put_buff_2(STOP_FLAG, STOP_LEN);
+  //free(line);
+  //printf("Exiting remove_line_sep\n");
   return NULL;
 }
 
@@ -187,7 +196,7 @@ get_buff_2() {
   char* line = buffer_2[consumer_index_2];
   ssize_t len = line_len_2[consumer_index_2];
   //printf("Here is the line get_buff_2 got: ");
-  fwrite(line, 1, len, stdout);
+  //fwrite(line, 1, len, stdout);
   count_2--;
   pthread_mutex_unlock(&mutex_2);
   consumer_index_2++;
@@ -229,24 +238,32 @@ remove_plus_signs(void* args) {
     struct string* string = get_buff_2();
     line = string->line;
     len = string->len;
+    //if (strcmp(line, STOP_FLAG) == 0) {
+
+      //put_buff_3(STOP_FLAG, STOP_LEN);
+    //}
     //printf("Got line from buff_2\n");
-    char new_line[len];
+    char* new_line = malloc(len * sizeof(char));
     ssize_t new_line_len = 0;
+    //printf("Before removing '++' line has a length of %ld\n", len);
     for (ssize_t i = 0; i < len; ++i) {
+      //printf("'%s' loop #%ld\n", new_line, new_line_len);
       if (line[i] == '+' && line[i + 1] == '+') {
-        new_line[i] = '^';
+        new_line[new_line_len++] = '^';
         i++;
       }
       else {
-        new_line[i] = line[i];
-        new_line_len++;
+        new_line[new_line_len++] = line[i];
       }
     }
-    put_buff_3((char*)&new_line, new_line_len);
+    new_line = realloc(new_line, new_line_len);
+    //printf("remove_plus_signs '%s' has a length of %ld\n", new_line, new_line_len);
+    put_buff_3(new_line, new_line_len);
     //printf("Put a line into buff_3\n");
   }
-  put_buff_3(STOP_FLAG, STOP_LEN);
-  free(line);
+  //put_buff_3(STOP_FLAG, STOP_LEN);
+  //free(line);
+  //printf("Exiting remove_plus_signs\n");
   return NULL;
 }
 
@@ -262,9 +279,10 @@ get_buff_3() {
   }
   char* line = buffer_3[consumer_index_3];
   ssize_t len = line_len_3[consumer_index_3];
+  //printf("Line from buffer_3[%d] is '%s' and length of %ld\n", consumer_index_3, line, len);
   count_3--;
   pthread_mutex_unlock(&mutex_3);
-  printf("count_3 is %d\n", count_3);
+  //printf("count_3 is %d\n", count_3);
   consumer_index_3++;
   struct string* output = calloc(1, sizeof(struct string));
   output->line = line;
@@ -291,19 +309,25 @@ write_line(void* args) {
     struct string* string = get_buff_3();
     line = string->line;
     len = string->len;
-    printf("New line has a length of %ld\n", len);
-    for (int i = 0; i < len || out_index < 80; ++i) {
+    if (strcmp(line, STOP_FLAG) == 0) {
+      //free(line);
+      return NULL;
+    }
+    //printf("write_line '%s' has a length of %ld\n", line, len);
+    for (int i = 0; i < len && out_index < 80; ++i) {
       output[out_index] = line[i];
       out_index++;
     }
+    //printf("out_index = %d\n", out_index);
     if (out_index == 80) {
-      printf("Printing something from output!\n");
+      //printf("Printing something from output!\n");
       fwrite(&output, 1, 80, stdout);
       putchar('\n');
       out_index = 0;
     }
   }
-  free(line);
+  //free(line);
+  //printf("Exiting write_line\n");
   return NULL;
 }
 
